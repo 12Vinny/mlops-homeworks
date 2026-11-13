@@ -2,7 +2,7 @@
 
 | Ризик | Ймовірність | Вплив | Mitigation (Пом'якшення / Вирішення) | Owner |
 | :--- | :--- | :--- | :--- | :--- |
-| **Slim image дає інший prediction, ніж fat** | Medium | High | Впровадити автоматизований тест (assertion) на однаковий test input для обох образів під час CI/CD процесу. | QA / AI/ML Engineer |
+| **Slim image дає інший prediction, ніж fat** | Medium | High | Впровадити автоматизований тест на однаковий test input для обох образів під час CI/CD процесу. | QA / AI/ML Engineer |
 | **Production-секрети потрапили в Compose** | Low | Critical | Налаштувати `.gitignore` для файлів `.env`, проводити обов'язковий code review, використовувати сканери секретів (напр., gitleaks) перед комітами. | AI PM / DevOps |
 | **Локальний стенд підключається до production DB або queue** | Low | Critical | Заборонити доступ з локальних IP до production баз даних. Використовувати виключно mock-сервіси або локальні контейнери (через Docker Compose) з тестовими даними. | DevOps |
 | **Несумісність версій Python (3.13), torch або torchvision** | Medium | High | Жорстко зафіксувати версії всіх бібліотек у `requirements.txt`. Провести попередній тест збірки базового образу перед оптимізацією. | AI/ML Engineer |
