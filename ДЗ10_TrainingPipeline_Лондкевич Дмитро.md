@@ -49,3 +49,67 @@
 | **Drift signal** | Реакція на деградацію якості моделі (Model Drift) або зміну у вхідних даних (Data Drift) у production. | Запуск відбувається виключно за реальною потребою; гарантує актуальність моделі. | Потрібен дуже зрілий та дорогий monitoring; хибні алерти можуть запустити нескінченний цикл перенавчань. | prod |
 
 Отже, правила запуску мають бути узгоджені на рівні архітектури проєкту. Частий автоматичний запуск (Push) створює гнучкість, але генерує зайві витрати, тому він підходить лише для Dev. Для Production-середовища найкраще комбінувати тригери: використовувати Schedule для рутинного оновлення моделей зі стабільним потоком даних, а Manual або Drift signal — для складних систем, де перенавчання має бути жорстко обґрунтованим або контрольованим.
+
+## 5. Risk assessment (Risk Register)
+
+Інтеграція GitLab CI з AWS Step Functions створює потужний автоматизований механізм, проте вимагає суворого контролю безпеки та витрат. Нижче наведено реєстр із 7 ключових ризиків та заходів щодо їх мінімізації до запуску пайплайну в production.
+
+| Ризик | Ймовірність | Вплив | Як зменшити ризик | Owner |
+| :--- | :--- | :--- | :--- | :--- |
+| **GitLab CI має надмірні AWS-права** | Medium | High | Використовувати OIDC-автентифікацію замість статичних ключів; налаштувати IAM-ролі за принципом найменших привілеїв (Least privilege) окремо для dev, staging та prod. | DevOps / MLOps |
+| **Training запускається занадто часто** | High | Medium | Налаштувати правила запуску: manual trigger для prod/staging, запуск за розкладом, або тригер лише при зміні файлів конфігурації моделі/даних. | AI PM |
+| **Модель не проходить quality gates, але йде далі** | Medium | High | Зробити Quality Gates жорстким блокером у пайплайні (hard stop). Обов'язкове порівняння з baseline; заборона просування без manual approval. | AI/ML Engineer + AI PM |
+| **Step Functions падає без сповіщення команди** | Medium | High | Додати `Catch` блок у конфігурацію Step Functions, який гарантовано відправляє failure-статус та лог помилки через SNS/Lambda у робочий месенджер команди. | MLOps Engineer |
+| **Пропуск етапу Data Validation** | Low | High | Архітектурно закріпити крок перевірки даних як перший обов'язковий етап Step Functions; пайплайн повинен падати, якщо валідація не пройдена або схема не знайдена. | Data Engineer |
+| **Помилка логування (MLflow недоступний)** | Low | High | Налаштувати механізм retry (повторних спроб) для підключення до MLflow. Якщо логування остаточно не вдається, вважати весь training job неуспішним. | MLOps Engineer |
+| **Автоматичний реліз у Production без перевірки** | Low | Critical | Фізично розділити Training Pipeline та Deployment Pipeline. Унеможливити автоматичний deploy в production без явного кроку "Manual Approval" у GitLab CI. | Tech Lead |
+
+## 6. Acceptance criteria для Jira-задачі
+
+Для того щоб команда розробки чітко розуміла вимоги до створення пайплайну, задачу **“Інтегрувати GitLab CI з AWS Step Functions для automated training pipeline”** описано через детальні Acceptance Criteria (AC). Задача вважається виконаною лише тоді, коли продукт відповідає всім наведеним нижче пунктам.
+
+**Acceptance Criteria:**
+* **Trigger & Security:** GitLab CI pipeline успішно запускає AWS Step Functions workflow. Доступ GitLab CI до AWS налаштований безпечно (через OIDC або IAM Roles), без надання надмірних адміністративних прав.
+* **Git-контекст:** У вхідні параметри (input) Step Functions коректно передаються метадані Git-репозиторію: `commit SHA`, `branch`, та `source="gitlab-ci"`.
+* **Visibility:** Step Functions execution чітко видно в AWS Console, а його ідентифікатор (ARN) логується у консолі GitLab CI для швидкого переходу та дебагінгу.
+* **Data Validation:** Pipeline містить окремий обов'язковий крок `Data validation`, який виконується строго перед початком training job.
+* **Logging:** Усі ключові результати тренування (ML-метрики, гіперпараметри) та артефакти моделі автоматично логуються в системі трекінгу (наприклад, MLflow).
+* **Quality Gates:** Pipeline автоматично перевіряє метрики нової моделі на відповідність Quality Gates (наприклад, порівняння з baseline). Якщо метрики гірші за поріг, пайплайн переривається.
+* **Model Registry:** При успішному проходженні Quality Gates нова модель автоматично отримує відповідний статус (наприклад, "Candidate" або "Staged") у Model Registry.
+* **Production Control:** Архітектура містить жорстку заборону автоматичного production-релізу; перехід моделі у production неможливий без кроку manual approval.
+* **Notification:** Команда отримує автоматичне notification (наприклад, у Slack) про `success` або `failure` пайплайну з деталями статусу, лінком на виконання та інформацією про Git-контекст.
+
+## 7. Notification messages
+
+Сповіщення (notification) — це критичний елемент керованого пайплайну. Воно не просто констатує факт завершення роботи, а дає команді необхідний контекст для розуміння статусу, містить посилання для швидкого розслідування та чітко визначає наступні кроки.
+
+**Приклад повідомлення при успішному виконанні:**
+
+✅ **Training pipeline completed successfully**
+
+*   **Model:** `churn_prediction_v3`
+*   **Source:** GitLab CI
+*   **Commit:** `a1b2c3d` (branch: `feature/new-features`)
+*   **Step Functions execution:** `MLOpsPipeline / execution-123`
+*   **Metrics:** F1-score = 0.83, Recall = 0.79 (перевищує baseline)
+*   **Status:** Candidate registered
+*   **Details:** [Link to MLflow run] / [Link to Model Registry]
+*   **Next action:** Tech Lead reviews quality gates before release decision.
+*   **Owner:** Tech Lead
+
+**Приклад повідомлення при помилці:**
+
+❌ **Training pipeline failed**
+
+*   **Model:** `churn_prediction_v3`
+*   **Source:** GitLab CI
+*   **Commit:** `a1b2c3d` (branch: `feature/new-features`)
+*   **Failed step:** `DataValidation`
+*   **Reason:** Missing required column `customer_age` in the input dataset.
+*   **Details:** [Link to Step Functions execution logs] / [Link to GitLab job logs]
+*   **Next action:** Data Engineer checks dataset and restarts pipeline after fix.
+*   **Owner:** Data Engineer
+
+## 8. Короткий висновок
+
+Впровадження automated training pipeline є фундаментальним кроком у MLOps, оскільки воно перетворює непередбачувані, ручні експерименти на стабільний та керований бізнес-процес. У цій архітектурі GitLab CI виступає як надійний ініціатор та контролер версій (Git-контекст), тоді як AWS Step Functions бере на себе важку роботу з оркестрації обчислень, логування та валідації. Водночас важливо розуміти, що технічний success пайплайну (відсутність помилок у коді) зовсім не означає готовності моделі до production. Саме для цього ми впроваджуємо Quality Gates та чіткі правила запуску. Лише після того, як модель доведе свою перевагу над baseline, пройде бізнес-валідацію та отримає manual approval від відповідальних осіб (Tech Lead / AI PM), її можна розглядати як надійне рішення для інтеграції в кінцевий продукт.
