@@ -1,26 +1,26 @@
 # Threat Model & Risk Register: LexiGuard AI
 
-## 1. Attack Surface Overview
+Цей документ описує поверхню атак нашого Legal-tech продукту та приоритизує загрози.
 
-Система LexiGuard AI є B2B платформою, інтегрованою в юридичні процеси корпорацій. Її поверхня атаки включає кілька критичних меж:
-1.  **Client Application (Web/API):** Точка входу, куди користувачі завантажують NDA та M&A контракти. Це вектор для введення зловмисних даних (Adversarial inputs, Prompt Injections), спрямованих на маніпуляцію логікою LLM.
-2.  **RAG & Vector DB (Pinecone):** Сховище корпоративних політик. Якщо механізм ізоляції tenant-ів (Namespaces) дасть збій, виникає критичний ризик міжклієнтського витоку даних (Cross-tenant PII leakage).
-3.  **Classic ML Pipeline (Intent Classification):** Вразливий до Data Poisoning під час retraining-циклів, якщо розмічені клієнтами дані потрапляють у навчальну вибірку без валідації.
-4.  **Inference & Infrastructure (AWS EKS):** Хостинг LLM та API. Вразливий до DoS-атак (Model exhaustion), що вичерпують дорогі GPU-ресурси, та несанкціонованого доступу CI/CD пайплайнів (GitLab) до Kubernetes-секретів.
+## Attack surface narrative
+Система LexiGuard AI обробляє конфіденційні M&A контракти через Web-застосунок (Client Application). Це формує першу лінію атаки: користувачі можуть завантажувати спеціально змінені файли (Adversarial inputs) або вводити зловмисні промпти для маніпуляції логікою LLM. Друга лінія — це внутрішній RAG-компонент (Pinecone Vector DB), який зберігає корпоративні політики. Оскільки архітектура є multi-tenant, збій ізоляції призведе до розкриття секретів одного enterprise-клієнта іншому. Третя лінія — це AWS EKS інфраструктура (Model inference) та CI/CD-пайплайни (GitLab), де відсутність жорсткого Role-Based Access Control (RBAC) створює ризики крадіжки ваг моделей або виснаження дорогих GPU-ресурсів через DDoS.
 
-Ураховуючи, що система працює з європейськими клієнтами, будь-який витік даних чи неконтрольована генерація тексту підпадає під дію GDPR та нагляду EU AI Act (як high-risk system у юридичній сфері).
+## Threat Table
 
-## 2. Threat Register
-
-*Пріоритет (Priority) обчислюється як Impact × Likelihood.*
-
-| ID | Category | Threat description | Attack surface | Business impact ($) | Likelihood (L/M/H) | Priority | Owner | Mitigation | Status |
+| ID | Category | Threat | Attack surface | Business impact | Likelihood | Priority | Owner | Mitigation | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **T-001** | LLM (Prompt injection) | **Direct Prompt Injection:** Користувач додає прихований текст у контракт, щоб змусити LLM згенерувати драфт, вигідний іншій стороні. | API / File Upload | $100K+ (судові позови клієнтів), втрата довіри | High | **P1** | Head of AI Safety | Впровадження вхідного LLM-фільтра (Guardrails) та суворий System Prompt. | In progress |
-| **T-002** | LLM (Hallucination) | **High-stakes Hallucination:** LLM придумує неіснуючий юридичний прецедент або ігнорує ключову політику (як в інциденті Q3). | Inference API | $120K ARR (втрата enterprise-контракту) | Medium | **P1** | ML Lead | Перевірка фактів через RAG (grounding), RAG-sync alerting, HITL (Manual review). | Implemented |
-| **T-003** | Infra (Data Leakage) | **Cross-tenant PII leakage:** RAG повертає фрагмент контракту клієнта А у відповіді на запит клієнта Б. | Pinecone (RAG) | €10M+ (штраф GDPR), знищення компанії | Low | **P1** | DevOps Lead | Жорстка ізоляція на рівні Pinecone Namespaces, шифрування tenant-ключів. | Implemented |
-| **T-004** | Classic ML | **Adversarial Examples:** Зміна форматування контракту змушує ML-модель класифікувати M&A як "безпечний NDA". | ML Pipeline | $50K (операційні збитки юристів) | Medium | **P2** | ML Engineer | Robustness тестування перед релізом (Release Checklist), adversarial training. | Not started |
-| **T-005** | Infra (Security) | **Overprivileged CI/CD:** GitLab пайплайн має адмінські права в AWS і може бути скомпрометований. | GitLab CI / AWS IAM | $200K+ (крадіжка моделей/даних, cryptomining) | Medium | **P2** | MLOps Lead | OIDC авторизація, Least privilege IAM policies для пайплайнів. | In progress |
-| **T-006** | LLM (Data Leakage) | **Sensitive data leakage у відповідях:** LLM відтворює конфіденційну інформацію, яку "завчила" під час fine-tuning. | Inference API | $50K+ (репутаційна шкода) | Low | **P2** | ML Lead | Анонімізація тренувальних даних (PII sanitization) перед fine-tuning. | Implemented |
-| **T-007** | Infra (Resource) | **Model Exhaustion (DoS):** Зловмисник надсилає тисячі запитів для виснаження GPU-інстансів (Financial DoS). | API Gateway | $10-20K (Cloud bill spike) | High | **P1** | Backend Lead | Rate-limiting на API Gateway, автоматичний алертинг по cloud-бюджету. | Accepted risk (monitoring only) |
-| **T-008** | Classic ML | **Data Poisoning:** Клієнти навмисно або
+| **T-001** | LLM-specific | **Direct prompt injection** | Web API / File Input | $120K (втрата клієнта через генерацію хибного драфту) | High | **P1** | Head of AI Safety | Впровадження вхідного Guardrails-фільтра та строгий System Prompt. | In progress |
+| **T-002** | LLM-specific | **High-stakes hallucinations** | Inference API | $100K+ (судовий позов за юридичну помилку моделі) | Medium | **P1** | ML Lead | LLM-as-a-judge оцінка відповідей + RAG grounding. | Implemented |
+| **T-003** | Infra/Product | **PII leakage через RAG** | Pinecone Vector DB | €10M+ (штраф GDPR за витік даних між клієнтами) | Low | **P1** | DevOps Lead | Жорстка ізоляція клієнтів на рівні Namespaces у Pinecone. | Implemented |
+| **T-004** | Classic ML | **Adversarial examples** | ML Pipeline (Intent) | $50K (операційні збитки юристів через хибне сортування) | Medium | **P2** | ML Engineer | Robustness-тестування датасету перед кожним релізом. | Not started |
+| **T-005** | LLM-specific | **Sensitive data leakage** | Inference API | $80K (репутаційна шкода від генерації тренувальних даних) | Low | **P2** | ML Lead | Сувора PII sanitization перед fine-tuning циклом. | Implemented |
+| **T-006** | Infra/Product | **Insecure CI/CD access** | GitLab CI / IAM | $200K+ (крадіжка моделей або несанкціонований cryptomining) | Medium | **P2** | MLOps Lead | OIDC авторизація та Least Privilege IAM roles для пайплайнів. | In progress |
+| **T-007** | Infra/Product | **Model exhaustion (DoS)** | API Gateway | $15-30K (рахунок від AWS за виснаження GPU-інстансів) | High | **P1** | Backend Lead | Rate-limiting на API Gateway + billing alerts. | Accepted risk |
+| **T-008** | Classic ML | **Data poisoning** | Training Data | $30K (падіння метрик класифікації та витрати на retraining) | Medium | **P2** | Data Engineer | Валідація даних користувацького фідбеку перед навчанням. | In progress |
+| **T-009** | LLM-specific | **Jailbreaking / policy bypass** | Inference API | $20K (PR-криза від токсичної генерації тексту) | Medium | **P2** | Head of AI Safety | Використання Llama-Guard на етапі виводу (Output filtering). | In progress |
+| **T-010** | Infra/Product | **Insufficient audit logging** | MLflow / EKS | Регуляторний блок роботи в EU через невідповідність AI Act | Low | **P2** | Head of Compliance | Інтеграція MLflow з AWS CloudTrail, строге версіонування. | Implemented |
+| **T-011** | Classic ML | **Model bias (Legal bias)** | ML Pipeline | $40K (відтік клієнтів з певних європейських юрисдикцій) | High | **P2** | AI PM | Моніторинг Data Drift у розрізі геолокації в Grafana. | Not started |
+| **T-012** | Infra/Product | **Model supply chain attack** | GitLab CI | $150K+ (backdoor у базовій LLM моделі з HuggingFace) | Low | **P3** | MLOps Lead | Звірка SHA256 хешів base-моделей перед fine-tuning. | Accepted risk |
+| **T-013** | LLM-specific | **Indirect prompt injection** | RAG Document Sync | $70K (маніпуляція виводом через завантажений шкідливий PDF) | Medium | **P2** | Backend Lead | Санітизація та перевірка тексту перед записом у векторну базу. | In progress |
+| **T-014** | Classic ML | **Model extraction via API** | API Gateway | Втрата інтелектуальної власності конкурентам | Low | **P3** | Backend Lead | Тротлінг за IP/Token та моніторинг аномальних патернів запитів. | Accepted risk |
+| **T-015** | Infra/Product | **S3 bucket public access** | AWS S3 (Artifacts) | €10M+ (GDPR breach тренувальних даних та контрактів) | Low | **P1** | DevOps Lead | S3 Block Public Access + автоматичне сканування Macie. | Implemented |
