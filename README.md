@@ -1,2 +1,0 @@
-# mlops-homeworks
-MLOps homeworks
