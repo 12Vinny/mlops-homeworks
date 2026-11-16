@@ -1,9 +1,9 @@
-# Architectural Decision Records (ADRs) для LexiGuard AI
+# Architectural Decision Records для LexiGuard AI
 
 ## ADR-001: Model Hosting Strategy (LLM & Classic ML)
 
 *   **Status:** Accepted
-*   **Date:** 2026-11-16
+*   **Date:** 2026-11-14
 *   **Decision maker:** Senior AI PM (в консультації з CTO та Head of Compliance)
 *   **Stakeholders consulted:** CTO, MLOps Lead, CFO, Head of Compliance, DPO
 
@@ -18,7 +18,7 @@ LexiGuard AI обробляє ~1M висококонфіденційних ко�
 ### Alternatives considered
 *   **Alternative 1: Commercial API (OpenAI / Anthropic)**
     *   *Pros:* Нульовий operational overhead, оплата лише за токени, найвища якість baseline.
-    *   *Cons:* Критичні блокери по compliance (не можемо гарантувати ізоляцію M&A контрактів), vendor lock-in.
+    *   *Cons:* Критичні блокери по compliance, тому що не можемо гарантувати ізоляцію M&A контрактів, vendor lock-in.
     *   *Estimated cost:* ~$15K/міс.
     *   *Why not chosen:* Не проходить аудит безпеки від клієнтів (enterprise-сегмент відмовиться від продукту).
 *   **Alternative 2: Managed Hosting (Amazon Bedrock з Provisioned Throughput)**
@@ -46,7 +46,7 @@ LexiGuard AI обробляє ~1M висококонфіденційних ко�
 ## ADR-002: RAG Storage & Tenant Isolation Strategy
 
 *   **Status:** Accepted
-*   **Date:** 2026-11-16
+*   **Date:** 2026-11-14
 *   **Decision maker:** Senior AI PM
 *   **Stakeholders consulted:** MLOps Lead, Head of Security
 
@@ -79,7 +79,7 @@ LexiGuard AI обробляє ~1M висококонфіденційних ко�
 ## ADR-003: Deployment Pattern для AI Компонентів
 
 *   **Status:** Accepted
-*   **Date:** 2026-11-16
+*   **Date:** 2026-11-14
 *   **Decision maker:** Senior AI PM
 *   **Stakeholders consulted:** VP Engineering, MLOps Lead
 
@@ -112,7 +112,7 @@ LexiGuard AI обробляє ~1M висококонфіденційних ко�
 ## ADR-004: Unified Monitoring Stack
 
 *   **Status:** Accepted
-*   **Date:** 2026-11-16
+*   **Date:** 2026-11-14
 *   **Decision maker:** Senior AI PM
 *   **Stakeholders consulted:** MLOps Lead
 
